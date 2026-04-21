@@ -1,10 +1,10 @@
 from app.schemas.calculation import CalculationCreate, CalculationRead, CalculationType
-from app.schemas.user import UserCreate, UserLogin, UserLoginResponse, UserRead
+from app.schemas.user import UserAuthResponse, UserCreate, UserLogin, UserRead
 
 __all__ = [
 	"UserCreate",
 	"UserLogin",
-	"UserLoginResponse",
+	"UserAuthResponse",
 	"UserRead",
 	"CalculationType",
 	"CalculationCreate",

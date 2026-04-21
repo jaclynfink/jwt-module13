@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.models.user import User
+from app.security import decode_access_token
 from main import app
 
 
@@ -37,7 +38,7 @@ def client():
 @pytest.mark.integration
 def test_register_user_success(client):
     response = client.post(
-        "/users/register",
+        "/register",
         json={
             "username": "new_user",
             "email": "new_user@example.com",
@@ -47,11 +48,16 @@ def test_register_user_success(client):
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["username"] == "new_user"
-    assert payload["email"] == "new_user@example.com"
-    assert "created_at" in payload
-    assert "password" not in payload
-    assert "password_hash" not in payload
+    assert payload["token_type"] == "bearer"
+    assert payload["user"]["username"] == "new_user"
+    assert payload["user"]["email"] == "new_user@example.com"
+    assert "created_at" in payload["user"]
+    assert "password" not in payload["user"]
+    assert "password_hash" not in payload["user"]
+
+    token_payload = decode_access_token(payload["access_token"])
+    assert token_payload["username"] == "new_user"
+    assert token_payload["email"] == "new_user@example.com"
 
 
 @pytest.mark.integration
@@ -67,8 +73,8 @@ def test_register_user_duplicate_username(client):
         "password": "StrongPass123",
     }
 
-    assert client.post("/users/register", json=first).status_code == 201
-    response = client.post("/users/register", json=second)
+    assert client.post("/register", json=first).status_code == 201
+    response = client.post("/register", json=second)
 
     assert response.status_code == 409
     assert response.json()["error"] == "Username already exists."
@@ -87,8 +93,8 @@ def test_register_user_duplicate_email(client):
         "password": "StrongPass123",
     }
 
-    assert client.post("/users/register", json=first).status_code == 201
-    response = client.post("/users/register", json=second)
+    assert client.post("/register", json=first).status_code == 201
+    response = client.post("/register", json=second)
 
     assert response.status_code == 409
     assert response.json()["error"] == "Email already exists."
@@ -101,17 +107,36 @@ def test_login_user_success(client):
         "email": "login_user@example.com",
         "password": "StrongPass123",
     }
-    client.post("/users/register", json=register_payload)
+    client.post("/register", json=register_payload)
 
     response = client.post(
-        "/users/login",
-        json={"username": "login_user", "password": "StrongPass123"},
+        "/login",
+        json={"identifier": "login_user", "password": "StrongPass123"},
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["message"] == "Login successful."
     assert payload["user"]["username"] == "login_user"
+    assert payload["token_type"] == "bearer"
+    assert decode_access_token(payload["access_token"])["username"] == "login_user"
+
+
+@pytest.mark.integration
+def test_login_user_success_with_email_identifier(client):
+    register_payload = {
+        "username": "email_login_user",
+        "email": "email_login_user@example.com",
+        "password": "StrongPass123",
+    }
+    client.post("/register", json=register_payload)
+
+    response = client.post(
+        "/login",
+        json={"identifier": "email_login_user@example.com", "password": "StrongPass123"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["username"] == "email_login_user"
 
 
 @pytest.mark.integration
@@ -121,11 +146,11 @@ def test_login_user_wrong_password(client):
         "email": "wrong_password_user@example.com",
         "password": "StrongPass123",
     }
-    client.post("/users/register", json=register_payload)
+    client.post("/register", json=register_payload)
 
     response = client.post(
-        "/users/login",
-        json={"username": "wrong_password_user", "password": "WrongPassword"},
+        "/login",
+        json={"identifier": "wrong_password_user", "password": "WrongPassword"},
     )
 
     assert response.status_code == 401
@@ -135,7 +160,7 @@ def test_login_user_wrong_password(client):
 @pytest.mark.integration
 def test_register_stores_password_hash(client):
     response = client.post(
-        "/users/register",
+        "/register",
         json={
             "username": "hash_check_user",
             "email": "hash_check_user@example.com",
@@ -143,7 +168,7 @@ def test_register_stores_password_hash(client):
         },
     )
 
-    user_id = response.json()["id"]
+    user_id = response.json()["user"]["id"]
 
     session_gen = app.dependency_overrides[get_db]()
     db = next(session_gen)
@@ -183,7 +208,7 @@ def test_register_stores_password_hash(client):
     ],
 )
 def test_register_rejects_username_or_password_out_of_bounds(client, payload):
-    response = client.post("/users/register", json=payload)
+    response = client.post("/register", json=payload)
 
     assert response.status_code == 400
     assert "error" in response.json()
@@ -193,14 +218,14 @@ def test_register_rejects_username_or_password_out_of_bounds(client, payload):
 @pytest.mark.parametrize(
     "payload",
     [
-        {"username": "abc", "password": "StrongPass123"},  # login username min_length is 4
-        {"username": "u" * 41, "password": "StrongPass123"},  # login username max_length is 40
-        {"username": "validlogin", "password": "short"},  # login password min_length is 8
-        {"username": "validlogin", "password": "p" * 129},  # login password max_length is 128
+        {"identifier": "ab", "password": "StrongPass123"},
+        {"identifier": "u" * 256, "password": "StrongPass123"},
+        {"identifier": "validlogin", "password": "short"},
+        {"identifier": "validlogin", "password": "p" * 129},
     ],
 )
 def test_login_rejects_username_or_password_out_of_bounds(client, payload):
-    response = client.post("/users/login", json=payload)
+    response = client.post("/login", json=payload)
 
     assert response.status_code == 400
     assert "error" in response.json()

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -25,12 +25,28 @@ class UserRead(BaseModel):
 class UserLogin(BaseModel):
     """Schema for incoming login payloads."""
 
-    username: str = Field(min_length=4, max_length=40)
+    model_config = ConfigDict(populate_by_name=True)
+
+    identifier: str = Field(
+        min_length=3,
+        max_length=255,
+        validation_alias=AliasChoices("identifier", "username", "email"),
+        serialization_alias="identifier",
+    )
     password: str = Field(min_length=8, max_length=128)
 
 
-class UserLoginResponse(BaseModel):
-    """Schema for successful login responses."""
+class UserAuthResponse(BaseModel):
+    """Schema for successful registration and login responses."""
 
-    message: str
+    access_token: str
+    token_type: str = "bearer"
     user: UserRead
+
+
+class TokenPayload(BaseModel):
+    """Schema for JWT payload validation in tests and future auth dependencies."""
+
+    sub: str
+    username: str
+    email: EmailStr

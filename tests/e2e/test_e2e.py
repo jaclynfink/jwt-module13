@@ -1,74 +1,87 @@
-# tests/e2e/test_e2e.py
+from uuid import uuid4
 
-import pytest  # Import the pytest framework for writing and running tests
+import pytest
 from playwright.sync_api import expect
 
-# The following decorators and functions define E2E tests for the FastAPI calculator application.
 
 @pytest.mark.e2e
-def test_hello_world(page, fastapi_server):
-    """
-    Test that the homepage displays "Hello World".
+def test_register_page_creates_user_and_stores_token(page, fastapi_server):
+    suffix = uuid4().hex[:8]
+    username = f'playwright_{suffix}'
+    email = f'{username}@example.com'
 
-    This test verifies that when a user navigates to the homepage of the application,
-    the main header (`<h1>`) correctly displays the text "Hello World". This ensures
-    that the server is running and serving the correct template.
-    """
-    # Navigate the browser to the homepage URL of the FastAPI application.
-    page.goto('http://localhost:8000')
-    
-    # Use an assertion to check that the text within the first <h1> tag is exactly "Hello World".
-    # If the text does not match, the test will fail.
-    expect(page.locator('h1')).to_have_text('Hello World')
+    page.goto('http://127.0.0.1:8000/register')
 
-@pytest.mark.e2e
-def test_calculator_add(page, fastapi_server):
-    """
-    Test the addition functionality of the calculator.
+    page.fill('#username', username)
+    page.fill('#email', email)
+    page.fill('#password', 'ValidPassword123')
+    page.click('#register-form button[type="submit"]')
 
-    This test simulates a user performing an addition operation using the calculator
-    on the frontend. It fills in two numbers, clicks the "Add" button, and verifies
-    that the result displayed is correct.
-    """
-    # Navigate the browser to the homepage URL of the FastAPI application.
-    page.goto('http://localhost:8000')
-    
-    # Fill in the first number input field (with id 'a') with the value '10'.
-    page.fill('#a', '10')
-    
-    # Fill in the second number input field (with id 'b') with the value '5'.
-    page.fill('#b', '5')
-    
-    # Click the button that has the exact text "Add". This triggers the addition operation.
-    page.click('button:text("Add")')
-    
-    # Use an assertion to check that the text within the result div (with id 'result') is exactly "Result: 15".
-    # This verifies that the addition operation was performed correctly and the result is displayed as expected.
-    expect(page.locator('#result')).to_have_text('Result: 15')
+    expect(page.locator('#status')).to_contain_text(f'Registration successful for {username}.')
+    token = page.evaluate("() => localStorage.getItem('access_token')")
+    assert token is not None
+    assert len(token.split('.')) == 3
+
 
 @pytest.mark.e2e
-def test_calculator_divide_by_zero(page, fastapi_server):
-    """
-    Test the divide by zero functionality of the calculator.
+def test_register_page_rejects_short_password_with_frontend_validation(page, fastapi_server):
+    suffix = uuid4().hex[:8]
+    username = f'pw_short_{suffix}'
+    email = f'{username}@example.com'
 
-    This test simulates a user attempting to divide a number by zero using the calculator.
-    It fills in the numbers, clicks the "Divide" button, and verifies that the appropriate
-    error message is displayed. This ensures that the application correctly handles invalid
-    operations and provides meaningful feedback to the user.
-    """
-    # Navigate the browser to the homepage URL of the FastAPI application.
-    page.goto('http://localhost:8000')
-    
-    # Fill in the first number input field (with id 'a') with the value '10'.
-    page.fill('#a', '10')
-    
-    # Fill in the second number input field (with id 'b') with the value '0', attempting to divide by zero.
-    page.fill('#b', '0')
-    
-    # Click the button that has the exact text "Divide". This triggers the division operation.
-    page.click('button:text("Divide")')
-    
-    # Use an assertion to check that the text within the result div (with id 'result') is exactly
-    # "Error: Cannot divide by zero!". This verifies that the application handles division by zero
-    # gracefully and displays the correct error message to the user.
-    expect(page.locator('#result')).to_have_text('Error: Cannot divide by zero!')
+    page.goto('http://127.0.0.1:8000/register')
+    page.fill('#username', username)
+    page.fill('#email', email)
+    page.fill('#password', 'hi')
+    page.click('#register-form button[type="submit"]')
+
+    is_invalid = page.evaluate("""
+        () => {
+            const password = document.getElementById('password');
+            return !password.checkValidity() && password.validationMessage.length > 0;
+        }
+    """)
+    assert is_invalid is True
+
+    token = page.evaluate("() => localStorage.getItem('access_token')")
+    assert token is None
+
+
+@pytest.mark.e2e
+def test_login_page_accepts_email_identifier(page, fastapi_server):
+    suffix = uuid4().hex[:8]
+    username = f'login_playwright_{suffix}'
+    email = f'{username}@example.com'
+
+    page.goto('http://127.0.0.1:8000/register')
+    page.fill('#username', username)
+    page.fill('#email', email)
+    page.fill('#password', 'ValidPassword123')
+    page.click('#register-form button[type="submit"]')
+    expect(page.locator('#status')).to_contain_text('Registration successful')
+
+    page.goto('http://127.0.0.1:8000/login')
+    page.fill('#identifier', email)
+    page.fill('#password', 'ValidPassword123')
+    page.click('#login-form button[type="submit"]')
+
+    expect(page).to_have_url('http://127.0.0.1:8000/?logged_in=1')
+    expect(page.locator('#auth-status')).to_have_text(f'Logged in as {username}.')
+    user = page.evaluate("() => JSON.parse(localStorage.getItem('current_user'))")
+    assert user['username'] == username
+
+
+@pytest.mark.e2e
+def test_login_page_shows_invalid_credentials(page, fastapi_server):
+    page.goto('http://127.0.0.1:8000/login')
+
+    page.fill('#identifier', 'missing_user')
+    page.fill('#password', 'WrongPassword123')
+    with page.expect_response(
+        lambda response: response.url.endswith('/login') and response.status == 401
+    ) as login_response:
+        page.click('#login-form button[type="submit"]')
+
+    assert login_response.value.status == 401
+
+    expect(page.locator('#status')).to_have_text('Invalid username or password.')

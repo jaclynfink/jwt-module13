@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.database import Base, get_db
 from app.models.calculation import Calculation
 from app.models.user import User
-from app.security import verify_password
+from app.security import decode_access_token, verify_password
 from main import app
 
 
@@ -63,11 +63,12 @@ def test_user_register_login_and_data_persisted_in_db(api_client: TestClient, ap
         "password": "StrongPass123",
     }
 
-    register_response = api_client.post("/users/register", json=register_payload)
+    register_response = api_client.post("/register", json=register_payload)
     assert register_response.status_code == 201
     registered = register_response.json()
-    assert registered["username"] == register_payload["username"]
-    assert registered["email"] == register_payload["email"]
+    assert registered["user"]["username"] == register_payload["username"]
+    assert registered["user"]["email"] == register_payload["email"]
+    assert decode_access_token(registered["access_token"])["username"] == register_payload["username"]
 
     persisted_user = (
         api_db_session.query(User)
@@ -79,8 +80,8 @@ def test_user_register_login_and_data_persisted_in_db(api_client: TestClient, ap
     assert verify_password(register_payload["password"], persisted_user.password_hash) is True
 
     login_response = api_client.post(
-        "/users/login",
-        json={"username": register_payload["username"], "password": register_payload["password"]},
+        "/login",
+        json={"identifier": register_payload["email"], "password": register_payload["password"]},
     )
     assert login_response.status_code == 200
     assert login_response.json()["user"]["username"] == register_payload["username"]

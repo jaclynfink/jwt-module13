@@ -3,6 +3,9 @@ A FastAPI project with a SQLAlchemy `User` model, Pydantic schemas, password has
 ## Features
 
 - **FastAPI** REST API
+- **JWT authentication** for registration and login
+- **Login and registration pages** for browser-based auth flow
+- **Playwright** end-to-end browser testing
 - **SQLAlchemy** ORM user model
   - `username`
   - `email`
@@ -61,8 +64,12 @@ uvicorn main:app --reload
 ```
 
 Open:
+- `http://127.0.0.1:8000/register` to create an account
+- `http://127.0.0.1:8000/login` to sign in
 - `http://localhost:8000/docs`
 - `http://localhost:8000/redoc`
+
+After logging in, you will be redirected to the home page and shown as logged in.
 
 ---
 
@@ -88,6 +95,22 @@ pytest -q tests/unit/test_calculation_factory.py tests/unit/test_calculation_mod
 export DATABASE_URL="postgresql+psycopg2://user:password@localhost:5432/myappdb"
 pytest -q tests/integration
 ```
+
+### Playwright E2E tests
+
+Install the browser once:
+
+```bash
+python -m playwright install chromium
+```
+
+Run the Playwright end-to-end tests:
+
+```bash
+pytest -q tests/e2e -m e2e
+```
+
+These tests cover registration, login, invalid login, and front-end password validation.
 
 ### API integration tests (Postgres-backed endpoint tests)
 

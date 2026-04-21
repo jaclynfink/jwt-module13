@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator  # Use @validator for Pydantic 1.x
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db, init_db
@@ -14,8 +15,8 @@ from app.models.user import User
 from app.operations.factory import CalculationFactory
 from app.operations import add, subtract, multiply, divide  # Ensure correct import path
 from app.schemas.calculation import CalculationCreate, CalculationRead
-from app.schemas.user import UserCreate, UserLogin, UserLoginResponse, UserRead
-from app.security import hash_password, verify_password
+from app.schemas.user import UserAuthResponse, UserCreate, UserLogin, UserRead
+from app.security import create_access_token, hash_password, verify_password
 import uvicorn
 import logging
 
@@ -79,6 +80,33 @@ async def read_root(request: Request):
     """
     return templates.TemplateResponse(request, "index.html", {"request": request})
 
+
+@app.get("/register")
+async def register_page(request: Request):
+    """Serve the registration page."""
+    return templates.TemplateResponse(request, "register.html", {"request": request})
+
+
+@app.get("/login")
+async def login_page(request: Request):
+    """Serve the login page."""
+    return templates.TemplateResponse(request, "login.html", {"request": request})
+
+
+@app.get("/health")
+async def health_check():
+    """Basic health endpoint used by container orchestrators."""
+    return {"status": "ok"}
+
+
+def build_auth_response(user: User) -> UserAuthResponse:
+    """Create the shared JWT auth response payload."""
+    token = create_access_token(
+        subject=str(user.id),
+        additional_claims={"username": user.username, "email": user.email},
+    )
+    return UserAuthResponse(access_token=token, user=UserRead.model_validate(user))
+
 @app.post("/add", response_model=OperationResponse, responses={400: {"model": ErrorResponse}})
 async def add_route(operation: OperationRequest):
     """
@@ -131,9 +159,10 @@ async def divide_route(operation: OperationRequest):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-@app.post("/users/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@app.post("/register", response_model=UserAuthResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/users/register", response_model=UserAuthResponse, status_code=status.HTTP_201_CREATED)
 def register_user(payload: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user using hashed password storage."""
+    """Register a new user, store a hashed password, and return a JWT."""
     duplicate_username = db.query(User).filter(User.username == payload.username).first()
     if duplicate_username:
         raise HTTPException(status_code=409, detail="Username already exists.")
@@ -156,17 +185,22 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="User already exists.") from exc
 
     db.refresh(user)
-    return user
+    return build_auth_response(user)
 
 
-@app.post("/users/login", response_model=UserLoginResponse)
+@app.post("/login", response_model=UserAuthResponse)
+@app.post("/users/login", response_model=UserAuthResponse)
 def login_user(payload: UserLogin, db: Session = Depends(get_db)):
-    """Authenticate a user by validating the password against the stored hash."""
-    user = db.query(User).filter(User.username == payload.username).first()
+    """Authenticate a user by username or email and return a JWT."""
+    user = (
+        db.query(User)
+        .filter(or_(User.username == payload.identifier, User.email == payload.identifier))
+        .first()
+    )
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
-    return UserLoginResponse(message="Login successful.", user=UserRead.model_validate(user))
+    return build_auth_response(user)
 
 
 @app.get("/calculations", response_model=list[CalculationRead])

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserCreate, UserLogin, UserRead
 
 
 class _UserRecord:
@@ -41,3 +41,15 @@ def test_user_read_omits_password_hash() -> None:
 
     assert serialized["username"] == "schema_user"
     assert "password_hash" not in serialized
+
+
+def test_user_login_accepts_username_alias() -> None:
+    payload = UserLogin(username="schema_user", password="StrongPass123")
+
+    assert payload.identifier == "schema_user"
+
+
+def test_user_login_accepts_email_alias() -> None:
+    payload = UserLogin(email="schema@example.com", password="StrongPass123")
+
+    assert payload.identifier == "schema@example.com"

@@ -1,4 +1,4 @@
-from app.security import hash_password, verify_password
+from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 
 def test_hash_password_returns_hashed_value() -> None:
@@ -24,3 +24,18 @@ def test_verify_password_returns_false_for_invalid_password() -> None:
     password_hash = hash_password("CorrectPassword123!")
 
     assert verify_password("WrongPassword123!", password_hash) is False
+
+
+def test_create_access_token_encodes_expected_claims() -> None:
+    """JWT creation should include subject and custom user claims."""
+    token = create_access_token(
+        subject="42",
+        additional_claims={"username": "token_user", "email": "token@example.com"},
+    )
+
+    payload = decode_access_token(token)
+
+    assert payload["sub"] == "42"
+    assert payload["username"] == "token_user"
+    assert payload["email"] == "token@example.com"
+    assert "exp" in payload

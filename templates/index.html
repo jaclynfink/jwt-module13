@@ -104,6 +104,24 @@
             margin-top: 10px;
             font-weight: bold;
         }
+
+        .auth-banner {
+            margin: 0 auto 20px;
+            max-width: 520px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            background: #f9fafb;
+        }
+
+        .auth-links {
+            margin-top: 10px;
+        }
+
+        .auth-links a,
+        .auth-links button {
+            margin: 0 6px;
+        }
     </style>
 </head>
 <body>
@@ -116,6 +134,15 @@
     -->
     
     <h1>Hello World</h1>
+
+    <div class="auth-banner">
+        <div id="auth-status">You are not logged in.</div>
+        <div class="auth-links">
+            <a href="/login">Login</a>
+            <a href="/register">Register</a>
+            <button id="logout-btn" style="display:none;">Logout</button>
+        </div>
+    </div>
     <!--
         <h1> Tag: Heading
         
@@ -219,6 +246,38 @@
             and updating the page based on the server's response.
         */
         
+        function renderAuthState() {
+            const userRaw = localStorage.getItem('current_user');
+            const token = localStorage.getItem('access_token');
+            const authStatus = document.getElementById('auth-status');
+            const logoutBtn = document.getElementById('logout-btn');
+
+            if (!userRaw || !token) {
+                authStatus.innerText = 'You are not logged in.';
+                logoutBtn.style.display = 'none';
+                return;
+            }
+
+            try {
+                const user = JSON.parse(userRaw);
+                authStatus.innerText = `Logged in as ${user.username}.`;
+                logoutBtn.style.display = 'inline-block';
+            } catch {
+                localStorage.removeItem('current_user');
+                localStorage.removeItem('access_token');
+                authStatus.innerText = 'You are not logged in.';
+                logoutBtn.style.display = 'none';
+            }
+        }
+
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            localStorage.removeItem('current_user');
+            localStorage.removeItem('access_token');
+            renderAuthState();
+        });
+
+        renderAuthState();
+
         async function calculate(operation) {
             /*
                 Function: calculate
