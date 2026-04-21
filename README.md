@@ -241,7 +241,7 @@ uvicorn main:app --reload
 ### Build image
 
 ```bash
-docker build -t sqlalchemy-module10:local .
+docker build -t jwt-module13:local .
 ```
 
 ### Run with local Postgres container
